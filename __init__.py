@@ -744,6 +744,7 @@ def install_modules(self):
             import_module(self, "triton", "triton")
             
     import_module(self, "mediapipe", "mediapipe")
+    import_module(self, "bitsandbytes", "bitsandbytes")
     
     subprocess.call([pybin, "-m", "pip", "install", "--disable-pip-version-check", "--use-deprecated=legacy-resolver", "ultralytics", "--upgrade"])
     subprocess.call([pybin, "-m", "pip", "install", "--disable-pip-version-check", "--use-deprecated=legacy-resolver", "git+https://github.com/theblackhatmagician/adetailer_sdxl.git"])
@@ -806,7 +807,7 @@ def install_modules(self):
         import_module(self, "jaxlib", "jaxlib>=0.4.33")
 
     subprocess.check_call([pybin, "-m", "pip", "install", "peft", "--upgrade"])
-    import_module(self, "transformers", "transformers==4.43.0")
+    import_module(self, "transformers", "transformers==4.46.0.dev0")
     print("Dir: " + str(subprocess.check_call([pybin, "-m", "pip", "cache", "purge"])))
 
 
@@ -898,6 +899,7 @@ class GENERATOR_OT_uninstall(Operator):
         uninstall_module_with_dependencies("flash_attn")
 
         uninstall_module_with_dependencies("controlnet-aux")
+        uninstall_module_with_dependencies("bitsandbytes")
 
         uninstall_module_with_dependencies("stable-audio-tools")
 
@@ -1109,12 +1111,12 @@ class GeneratorAddonPreferences(AddonPreferences):
                 "Stable Video Diffusion (1024x576x14)",
                 "stabilityai/stable-video-diffusion-img2vid",
             ),
-            # Frame by Frame - disabled
-            #            (
-            #                "stabilityai/stable-diffusion-xl-base-1.0",
-            #                "Img2img SD XL 1.0 Refine (1024x1024)",
-            #                "Stable Diffusion XL 1.0",
-            #            ),
+            # Frame by Frame
+            (
+                "stabilityai/stable-diffusion-xl-base-1.0",
+                "Frame by Frame SDXL (1024x1024)",
+                "Stable Diffusion XL 1.0",
+            ),
             ("wangfuyun/AnimateLCM", "AnimateLCM", "wangfuyun/AnimateLCM"),
             ("THUDM/CogVideoX-2b", "CogVideoX-2b (720x480x48)", "THUDM/CogVideoX-2b"),
             ("THUDM/CogVideoX-5b", "CogVideoX-5b (720x480x48)", "THUDM/CogVideoX-5b"),
@@ -1146,6 +1148,7 @@ class GeneratorAddonPreferences(AddonPreferences):
                 "stabilityai/stable-diffusion-xl-base-1.0",
             ),
             ("ByteDance/SDXL-Lightning", "Stable Diffusion XL Lightning (1024x1024)", "ByteDance/SDXL-Lightning"),
+            ("stabilityai/stable-diffusion-3.5-large", "Stable Diffusion 3.5 Large", "stabilityai/stable-diffusion-3.5-large"),
             ("stabilityai/stable-diffusion-3-medium-diffusers", "Stable Diffusion 3", "stabilityai/stable-diffusion-3-medium-diffusers"),
 #            (
 #                "Lykon/dreamshaper-8",
@@ -1298,7 +1301,7 @@ class GeneratorAddonPreferences(AddonPreferences):
         row.operator("sequencer.uninstall_generator")
         box.prop(self, "movie_model_card")
         box.prop(self, "image_model_card")
-        if self.image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":
+        if self.image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers" or self.image_model_card == "stabilityai/stable-diffusion-3.5-large":
             row = box.row(align=True)
             row.prop(self, "hugginface_token")
             row.operator("wm.url_open", text="", icon="URL").url = "https://huggingface.co/settings/tokens"
@@ -1675,7 +1678,9 @@ class SEQUENCER_PT_pallaidium_panel(Panel):  # UI
                     if input == "input_strips" and not scene.inpaint_selected_strip:
                         col = col.column(heading="Use", align=True)
                         col.prop(addon_prefs, "use_strip_data", text=" Name & Seed")
-                        if type != "movie" or (movie_model_card != "black-forest-labs/FLUX.1-schnell" or movie_model_card != "ChuckMcSneed/FLUX.1-dev"):
+                        if (type == "movie" and (movie_model_card == "black-forest-labs/FLUX.1-schnell" or movie_model_card == "ChuckMcSneed/FLUX.1-dev")):
+                            pass
+                        else:
                             col.prop(context.scene, "image_power", text="Strip Power")
                         if (type == "movie" and movie_model_card == "stabilityai/stable-video-diffusion-img2vid") or (
                             type == "movie" and movie_model_card == "stabilityai/stable-video-diffusion-img2vid-xt"
@@ -1736,7 +1741,6 @@ class SEQUENCER_PT_pallaidium_panel(Panel):  # UI
                 row.prop(scene, "ip_adapter_style_folder", text="Adapter Style")
                 row.operator("ip_adapter_style.file_browser", text="", icon="FILE_FOLDER")
             # Prompts
-
             col = layout.column(align=True)
             col = col.box()
             col = col.column(align=True)
@@ -1933,7 +1937,7 @@ class SEQUENCER_PT_pallaidium_panel(Panel):  # UI
         col.prop(context.scene, "generatorai_typeselect", text="Output")
         if type == "image":
             col.prop(addon_prefs, "image_model_card", text=" ")
-            if addon_prefs.image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":
+            if addon_prefs.image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers" or addon_prefs.image_model_card == "stabilityai/stable-diffusion-3.5-large":
                 row = col.row(align=True)
                 row.prop(addon_prefs, "hugginface_token")
                 row.operator("wm.url_open", text="", icon="URL").url = "https://huggingface.co/settings/tokens"
@@ -1959,13 +1963,13 @@ class SEQUENCER_PT_pallaidium_panel(Panel):  # UI
             row = col.row(align=True)
             row.scale_y = 1.2
             if type == "movie":
-                # img2img
-                #                if movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
-                #                    row.operator(
-                #                        "sequencer.text_to_generator", text="Generate from Strips"
-                #                    )
-                #                else:
-                row.operator("sequencer.generate_movie", text="Generate")
+                # Frame by Frame
+                if movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
+                    row.operator(
+                        "sequencer.text_to_generator", text="Generate from Strips"
+                    )
+                else:
+                    row.operator("sequencer.generate_movie", text="Generate")
             if type == "image":
                 row.operator("sequencer.generate_image", text="Generate")
             if type == "audio":
@@ -2045,8 +2049,9 @@ class SEQUENCER_OT_generate_movie(Operator):
             and movie_model_card != "wangfuyun/AnimateLCM"
             and movie_model_card != "THUDM/CogVideoX-5b"
             and movie_model_card != "THUDM/CogVideoX-2b"
-        ):
-# img2img SDXL - disabled
+        ) or movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
+            # Frame by Frame
+#            if movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
 #                from diffusers import StableDiffusionXLImg2ImgPipeline
 #                refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
 #                    "stabilityai/stable-diffusion-xl-refiner-1.0",
@@ -2061,44 +2066,45 @@ class SEQUENCER_OT_generate_movie(Operator):
 #                    # refiner.enable_vae_slicing()
 #                else:
 #                    refiner.to(gfx_device)
-#            if (
-#                movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0"
-#            ):  # img2img
-#                from diffusers import StableDiffusionXLImg2ImgPipeline, AutoencoderKL
-#                vae = AutoencoderKL.from_pretrained(
-#                    "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
-#                )
-#                pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-#                    movie_model_card,
-#                    torch_dtype=torch.float16,
-#                    variant="fp16",
-#                    vae=vae,
-#                )
+            if (movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0"):  # img2img
+                from diffusers import StableDiffusionXLImg2ImgPipeline, AutoencoderKL
+                vae = AutoencoderKL.from_pretrained(
+                    "madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16
+                )
+                pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+                    movie_model_card,
+                    torch_dtype=torch.float16,
+                    variant="fp16",
+                    vae=vae,
+                )
 #                from diffusers import DPMSolverMultistepScheduler
 #                pipe.scheduler = DPMSolverMultistepScheduler.from_config(
 #                    pipe.scheduler.config
 #                )
-#                pipe.watermark = NoWatermark()
-#                if low_vram():
-#                    pipe.enable_model_cpu_offload()
-#                    # pipe.unet.enable_forward_chunking(chunk_size=1, dim=1) # Heavy
-#                    # pipe.enable_vae_slicing()
-#                else:
-#                    pipe.to(gfx_device)
-#                from diffusers import StableDiffusionXLImg2ImgPipeline
-#                refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-#                    "stabilityai/stable-diffusion-xl-refiner-1.0",
-#                    text_encoder_2=pipe.text_encoder_2,
-#                    vae=pipe.vae,
-#                    torch_dtype=torch.float16,
-#                    variant="fp16",
-#                )
-#                if low_vram():
-#                    refiner.enable_model_cpu_offload()
-#                    # refiner.enable_vae_tiling()
-#                    # refiner.enable_vae_slicing()
-#                else:
-#                    refiner.to(gfx_device)
+                pipe.watermark = NoWatermark()
+                
+                if low_vram():
+                    pipe.enable_model_cpu_offload()
+                    # pipe.unet.enable_forward_chunking(chunk_size=1, dim=1) # Heavy
+                    # pipe.enable_vae_slicing()
+                else:
+                    pipe.to(gfx_device)
+                    
+                from diffusers import StableDiffusionXLImg2ImgPipeline
+                refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+                    "stabilityai/stable-diffusion-xl-refiner-1.0",
+                    text_encoder_2=pipe.text_encoder_2,
+                    vae=pipe.vae,
+                    torch_dtype=torch.float16,
+                    variant="fp16",
+                )
+                
+                if low_vram():
+                    refiner.enable_model_cpu_offload()
+                    # refiner.enable_vae_tiling()
+                    # refiner.enable_vae_slicing()
+                else:
+                    refiner.to(gfx_device)
 
             if (
                 movie_model_card == "stabilityai/stable-video-diffusion-img2vid"
@@ -2301,44 +2307,44 @@ class SEQUENCER_OT_generate_movie(Operator):
 
             # Process batch input for images
             if (
-                (scene.movie_path or scene.image_path)
-                and input == "input_strips"
+                ((scene.movie_path or scene.image_path)
+                and input == "input_strips") or movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0"
             ):
                 video_path = scene.movie_path
 
-                #                # img2img disabled
-                #                if movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
-                #                    print("Process: Frame by frame (SD XL)")
-                #                    input_video_path = video_path
-                #                    output_video_path = solve_path("temp_images")
-                #                    if scene.movie_path:
-                #                        frames = process_video(input_video_path, output_video_path)
-                #                    elif scene.image_path:
-                #                        frames = process_image(
-                #                            scene.image_path, int(scene.generate_movie_frames)
-                #                        )
-                #                    video_frames = []
-                #                    # Iterate through the frames
-                #                    for frame_idx, frame in enumerate(
-                #                        frames
-                #                    ):  # would love to get this flicker free
-                #                        print(str(frame_idx + 1) + "/" + str(len(frames)))
-                #                        image = refiner(
-                #                            prompt,
-                #                            negative_prompt=negative_prompt,
-                #                            num_inference_steps=movie_num_inference_steps,
-                #                            strength=1.00 - scene.image_power,
-                #                            guidance_scale=movie_num_guidance,
-                #                            image=frame,
-                #                            generator=generator,
-                #                        ).images[0]
-                #                        video_frames.append(image)
-                #                        if torch.cuda.is_available():
-                #                            torch.cuda.empty_cache()
-                #                    video_frames = np.array(video_frames)
+                # Frame by Frame
+                if movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
+                    print("Process: Frame by frame (SD XL)")
+                    input_video_path = video_path
+                    output_video_path = solve_path("temp_images")
+                    if scene.movie_path:
+                        frames = process_video(input_video_path, output_video_path)
+                    elif scene.image_path:
+                        frames = process_image(
+                            scene.image_path, int(scene.generate_movie_frames)
+                        )
+                    video_frames = []
+                    # Iterate through the frames
+                    for frame_idx, frame in enumerate(
+                        frames
+                    ):  # would love to get this flicker free
+                        print(str(frame_idx + 1) + "/" + str(len(frames)))
+                        image = refiner(
+                            prompt,
+                            negative_prompt=negative_prompt,
+                            num_inference_steps=movie_num_inference_steps,
+                            strength=1.00 - scene.image_power,
+                            guidance_scale=movie_num_guidance,
+                            image=frame,
+                            generator=generator,
+                        ).images[0]
+                        video_frames.append(image)
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    video_frames = np.array(video_frames)
 
                 # vid2vid / img2vid
-                if (
+                elif (
                     movie_model_card == "stabilityai/stable-video-diffusion-img2vid"
                     or movie_model_card == "stabilityai/stable-video-diffusion-img2vid-xt"
                 ):
@@ -3385,6 +3391,7 @@ class SEQUENCER_OT_generate_image(Operator):
             and not image_model_card == "Lykon/dreamshaper-8"
             and not image_model_card == "Corcelio/mobius"
             and not image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers"
+            and not image_model_card == "stabilityai/stable-diffusion-3.5-large"
             and not image_model_card == "Vargol/ProteusV0.4"
             and not scene.ip_adapter_face_folder
             and not scene.ip_adapter_style_folder
@@ -3485,13 +3492,13 @@ class SEQUENCER_OT_generate_image(Operator):
                     pipe.vae.enable_tiling()
                 elif low_vram():
                     pipe.enable_sequential_cpu_offload()
-                    pipe.enable_vae_slicing()
+                    #pipe.enable_vae_slicing()
                     pipe.vae.enable_tiling()
                 else:
                     pipe.enable_sequential_cpu_offload()
                     #pipe.enable_model_cpu_offload()
-                    pipe.enable_vae_slicing()
-                    pipe.vae.enable_tiling()
+                    #pipe.enable_vae_slicing()
+                    #pipe.vae.enable_tiling()
 
         # Conversion img2img/vid2img.
         elif (
@@ -3533,7 +3540,7 @@ class SEQUENCER_OT_generate_image(Operator):
                     converter.to(gfx_device)
             else:
                 from diffusers import AutoPipelineForImage2Image
-                if image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":
+                if image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":# or image_model_card == "stabilityai/stable-diffusion-3.5-large":
                     import torch
                     from huggingface_hub.commands.user import login
                     result = login(token=addon_prefs.hugginface_token, add_to_git_credential=True)
@@ -3560,11 +3567,12 @@ class SEQUENCER_OT_generate_image(Operator):
                         converter.vae.enable_tiling()
                     elif low_vram():
                         converter.enable_sequential_cpu_offload()
-                        #pipe.enable_vae_slicing()
+                        converter.enable_vae_slicing()
                         converter.vae.enable_tiling()
-                        converter.to(torch.float16)
                     else:
                         converter.enable_model_cpu_offload()
+                        #converter.enable_vae_slicing()
+                        #converter.vae.enable_tiling()
                 else:
                     if low_vram():
                         converter.enable_model_cpu_offload()
@@ -3820,7 +3828,7 @@ class SEQUENCER_OT_generate_image(Operator):
             pipe = pipe.to(gfx_device)
 
         # SD3 Stable Diffusion 3
-        elif image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":
+        elif image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":# or image_model_card == "stabilityai/stable-diffusion-3.5-large":
             print("Load: Stable Diffusion 3 Model")
             import torch
             from huggingface_hub.commands.user import login
@@ -3828,9 +3836,7 @@ class SEQUENCER_OT_generate_image(Operator):
             print(str(result))
             from diffusers import StableDiffusion3Pipeline
             pipe = StableDiffusion3Pipeline.from_pretrained(
-                "stabilityai/stable-diffusion-3-medium-diffusers",
-#                "stabilityai/stable-diffusion-3-medium-diffusers",
-#                revision="refs/pr/26",
+                image_model_card,
                 torch_dtype=torch.float16,
             )
 #            pipe = StableDiffusion3Pipeline.from_single_file(
@@ -3841,6 +3847,55 @@ class SEQUENCER_OT_generate_image(Operator):
                 pipe.enable_model_cpu_offload()
             else:
                 pipe.to(gfx_device)
+
+        # SD3.5 Stable Diffusion 3.5
+        elif image_model_card == "stabilityai/stable-diffusion-3.5-large":
+            print("Load: Stable Diffusion 3.5 large Model")
+            from huggingface_hub.commands.user import login
+            result = login(token=addon_prefs.hugginface_token, add_to_git_credential=True)
+            print(str(result))
+            
+            import torch
+            if not do_inpaint and not enabled_items and not do_convert: 
+                from diffusers import BitsAndBytesConfig, SD3Transformer2DModel
+                from diffusers import StableDiffusion3Pipeline
+
+                nf4_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16
+                )
+                model_nf4 = SD3Transformer2DModel.from_pretrained(
+                    image_model_card,
+                    subfolder="transformer",
+                    quantization_config=nf4_config,
+                    torch_dtype=torch.bfloat16
+                )
+
+                pipe = StableDiffusion3Pipeline.from_pretrained(
+                    image_model_card, 
+                    transformer=model_nf4,
+                    torch_dtype=torch.bfloat16,
+                )
+                #pipe.enable_model_cpu_offload()            
+            else:
+                from diffusers import StableDiffusion3Pipeline
+                pipe = StableDiffusion3Pipeline.from_pretrained(
+                    image_model_card,
+
+                    torch_dtype=torch.float16,
+                )
+    #            pipe = StableDiffusion3Pipeline.from_single_file(
+    #                "https://huggingface.co/stabilityai/stable-diffusion-3-medium/blob/main/sd3_medium_incl_clips_t5xxlfp8.safetensors",
+    #                torch_dtype=torch.float16,
+    #            )
+    #             if low_vram():
+            if gfx_device == "mps":
+                pipe.vae.enable_tiling()
+            else:
+                pipe.enable_model_cpu_offload()
+    #            else:
+    #                pipe.to(gfx_device)
 
         # Mobius
         elif do_convert == False and image_model_card == "Corcelio/mobius":
@@ -3867,25 +3922,43 @@ class SEQUENCER_OT_generate_image(Operator):
             else:
                 pipe.to(gfx_device)
 
-        # Flux Schnell
+        # Flux
         elif (image_model_card == "black-forest-labs/FLUX.1-schnell" or image_model_card == "ChuckMcSneed/FLUX.1-dev"):
             print("Load: Flux Model")
             flush()
+            import torch
             from diffusers import FluxPipeline
-            pipe = FluxPipeline.from_pretrained(image_model_card, torch_dtype=torch.bfloat16)
+            if not do_inpaint and not enabled_items and not do_convert:
+                from diffusers import BitsAndBytesConfig, FluxTransformer2DModel
 
-            if gfx_device == "mps":
-                pipe.vae.enable_tiling()
-            elif low_vram():
-                pipe.enable_sequential_cpu_offload()
-                pipe.enable_vae_slicing()
-                pipe.vae.enable_tiling()
+                nf4_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16
+                )
+                model_nf4 = FluxTransformer2DModel.from_pretrained(
+                    image_model_card,
+                    subfolder="transformer",
+                    quantization_config=nf4_config,
+                    torch_dtype=torch.bfloat16
+                )
+
+                pipe = FluxPipeline.from_pretrained(image_model_card, transformer=model_nf4, torch_dtype=torch.bfloat16)
+                pipe.enable_model_cpu_offload()
             else:
-                #pipe.to(gfx_device)
-                pipe.enable_sequential_cpu_offload()
-                #pipe.enable_model_cpu_offload()
-                pipe.enable_vae_slicing()
-                pipe.vae.enable_tiling()
+                pipe = FluxPipeline.from_pretrained(image_model_card, torch_dtype=torch.bfloat16)
+
+                if gfx_device == "mps":
+                    pipe.vae.enable_tiling()
+                elif low_vram():
+                    pipe.enable_sequential_cpu_offload()
+                    pipe.enable_vae_slicing()
+                    pipe.vae.enable_tiling()
+                else:
+                    pipe.enable_sequential_cpu_offload()
+                    #pipe.enable_model_cpu_offload()
+                    #pipe.enable_vae_slicing()
+                    #pipe.vae.enable_tiling()
 
         # Fluently-XL
         elif image_model_card == "youknownothing/Fluently-XL-Final":
@@ -4520,6 +4593,8 @@ class SEQUENCER_OT_generate_image(Operator):
                         image_num_inference_steps = 4
                     image = pipe(
                         prompt=prompt,
+                        prompt_2=None,
+                        max_sequence_length=512,
                         image=init_image,
                         mask_image=mask_image,
                         num_inference_steps=image_num_inference_steps,
@@ -4591,6 +4666,8 @@ class SEQUENCER_OT_generate_image(Operator):
                 ):
                     image = converter(
                         prompt=prompt,
+                        prompt_2=None,
+                        max_sequence_length=512,
                         image=init_image,
                         strength=1.00 - scene.image_power,
                         # negative_prompt=negative_prompt,
@@ -4603,6 +4680,8 @@ class SEQUENCER_OT_generate_image(Operator):
                 elif image_model_card == "ChuckMcSneed/FLUX.1-dev":
                     image = converter(
                         prompt=prompt,
+                        prompt_2=None,
+                        max_sequence_length=512,
                         image=init_image,
                         strength=1.00 - scene.image_power,
                         # negative_prompt=negative_prompt,
@@ -4631,6 +4710,8 @@ class SEQUENCER_OT_generate_image(Operator):
             elif image_model_card == "black-forest-labs/FLUX.1-schnell":
                 image = pipe(
                     prompt=prompt,
+                    prompt_2=None,
+                    max_sequence_length=512,
                     num_inference_steps=image_num_inference_steps,
                     guidance_scale=image_num_guidance,
                     height=y,
@@ -4641,6 +4722,8 @@ class SEQUENCER_OT_generate_image(Operator):
             elif image_model_card == "ChuckMcSneed/FLUX.1-dev":
                 image = pipe(
                     prompt=prompt,
+                    prompt_2=None,
+                    max_sequence_length=512,
                     num_inference_steps=image_num_inference_steps,
                     guidance_scale=image_num_guidance,
                     height=y,
@@ -4741,7 +4824,7 @@ class SEQUENCER_OT_generate_image(Operator):
 
 
             # Generate Stable Diffusion etc.
-            elif image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers":
+            elif image_model_card == "stabilityai/stable-diffusion-3-medium-diffusers" or image_model_card == "stabilityai/stable-diffusion-3.5-large":
                 print("Generate: SD3 Image ")
                 image = pipe(
                     prompt="",
@@ -4984,6 +5067,7 @@ class SEQUENCER_OT_generate_image(Operator):
             filename = clean_filename(str(seed) + "_" + context.scene.generate_movie_prompt)
             out_path = solve_path(filename + ".png")
             image.save(out_path)
+            bpy.types.Scene.genai_out_path = out_path
 
             if input == "input_strips":
                 old_strip = context.scene.sequence_editor.active_strip #context.selected_sequences[0]
@@ -5020,8 +5104,7 @@ class SEQUENCER_OT_generate_image(Operator):
                             if i > 0:
                                 scene.frame_current = scene.sequence_editor.active_strip.frame_final_start
                             # Redraw UI to display the new strip. Remove this if Blender crashes: https://docs.blender.org/api/current/info_gotcha.html#can-i-redraw-during-script-execution
-
-                            bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
+                            # bpy.ops.wm.redraw_timer(type="DRAW_WIN_SWAP", iterations=1)
                             break
             print_elapsed_time(start_time)
         try:
@@ -5294,13 +5377,13 @@ class SEQUENCER_OT_strip_to_generatorAI(Operator):
 
         if type == "text":
             for strip in strips:
-                if strip.type in {"MOVIE", "IMAGE"}:
+                if strip.type in {"MOVIE", "IMAGE", "TEXT", "SCENE", "META"}:
                     print("Process: Image Captioning")
                     break
             else:
                 self.report(
                     {"INFO"},
-                    "None of the selected strips are movie or image.",
+                    "None of the selected strips are possible to caption.",
                 )
                 return {"CANCELLED"}
 
@@ -5747,6 +5830,7 @@ def register():
         default=0.50,
         min=0.05,
         max=0.82,
+        description="Preserve the input image in vid/img to img/vid processes",
     )
     styles_array = load_styles(os.path.dirname(os.path.abspath(__file__)) + "/styles.json")
     if styles_array:
@@ -5859,6 +5943,8 @@ def register():
     )
     bpy.types.Scene.ip_adapter_style_files_to_import = bpy.props.CollectionProperty(type=IPAdapterStyleProperties)
 
+    bpy.types.Scene.genai_out_path = bpy.props.StringProperty(name="genai_out_path", default="")
+    bpy.types.Scene.genai_out_path = ""
 
 def unregister():
     for cls in classes:
