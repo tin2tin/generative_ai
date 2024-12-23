@@ -690,7 +690,8 @@ def install_modules(self):
 
     # import_module(self, "diffusers", "diffusers")
     import_module(self, "requests", "requests")
-    import_module(self, "diffusers", "git+https://github.com/huggingface/diffusers.git")
+    import_module(self, "diffusers", "git+https://github.com/huggingface/diffusers.git@refs/pull/10330/head") #ltx
+    #import_module(self, "diffusers", "git+https://github.com/huggingface/diffusers.git")
     
     import_module(self, "huggingface_hub", "huggingface_hub")
     import_module(self, "gguf", "gguf")
@@ -2274,31 +2275,43 @@ class SEQUENCER_OT_generate_movie(Operator):
                 
             # LTX
             elif movie_model_card == "Lightricks/LTX-Video":
+                
                 #vid2vid
                 if scene.movie_path and input == "input_strips":
                     print("LTX Video doesn't support vid2vid!")                
-                    return {"CANCELLED"}
+                    from diffusers.utils import load_video
+                    from diffusers import LTXVideoToVideoPipeline
+                    pipe = LTXVideoToVideoPipeline.from_pretrained(
+                        "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
+                        torch_dtype=torch.bfloat16,
+                    )
                 #img2vid
                 elif scene.image_path and input == "input_strips":
                     print("LTX Video: Load Image to Video Model")
                     import torch
                     from diffusers.utils import load_image
-                    from diffusers import LTXImageToVideoPipeline, LTXVideoTransformer3DModel, GGUFQuantizationConfig
+                    from diffusers import LTXImageToVideoPipeline
                     pipe = LTXImageToVideoPipeline.from_pretrained(
                         "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
                         torch_dtype=torch.bfloat16,
                     )
-                    pipe.enable_model_cpu_offload()  
-
                 else:
                     print("LTX Video: Load Prompt to Video Model")
                     import torch
-                    from diffusers import LTXPipeline, LTXVideoTransformer3DModel, GGUFQuantizationConfig
+                    from diffusers import LTXPipeline
                     pipe = LTXPipeline.from_pretrained(
                         "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
                         torch_dtype=torch.bfloat16,
                     )
-                    pipe.enable_model_cpu_offload()                
+                    
+                if gfx_device == "mps":
+                    pipe.vae.enable_tiling()
+                elif low_vram():
+                    pipe.enable_sequential_cpu_offload()
+                    #pipe.enable_vae_slicing()
+                    pipe.vae.enable_tiling()
+                else:
+                    pipe.enable_model_cpu_offload()              
                
             # Mochi
             elif movie_model_card == "genmo/mochi-1-preview":
@@ -2537,6 +2550,27 @@ class SEQUENCER_OT_generate_movie(Operator):
 #                        return {"CANCELLED"}
                 # LTX 
                 elif movie_model_card == "Lightricks/LTX-Video":
+                    if scene.movie_path:
+                        print("Process: Video to video (LTX) not supported!")
+                        return {"CANCELLED"}
+                        print("Process: Video to video (LTX)")
+                        if not os.path.isfile(scene.movie_path):
+                            print("No file found.")
+                            return {"CANCELLED"}
+                        #video = load_video_as_np_array(video_path)
+                        video = load_video(video_path)[:49]
+                        video_frames = pipe(
+                            video=video,
+                            prompt=prompt,
+                            #strength=1.00 - scene.image_power,
+                            negative_prompt=negative_prompt,
+                            num_inference_steps=movie_num_inference_steps,
+                            guidance_scale=movie_num_guidance,
+                            height=y,
+                            width=x,
+                            #num_frames=abs(duration),
+                            generator=generator,
+                        ).frames[0]                    
                     if scene.image_path:
                         print("Process: Image to video (LTX)")
                         if not os.path.isfile(scene.image_path):
@@ -2557,7 +2591,6 @@ class SEQUENCER_OT_generate_movie(Operator):
                             generator=generator,
                             #use_dynamic_cfg=True,
                         ).frames[0]                  
-                
                 else:
                     if scene.movie_path:
                         print("Process: Video to video")
