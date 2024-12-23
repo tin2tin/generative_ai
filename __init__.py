@@ -693,6 +693,7 @@ def install_modules(self):
     import_module(self, "diffusers", "git+https://github.com/huggingface/diffusers.git")
     
     import_module(self, "huggingface_hub", "huggingface_hub")
+    import_module(self, "gguf", "gguf")
     #import_module(self, "protobuf", "protobuf==3.20.1")
     import_module(self, "pydub", "pydub")
     
@@ -810,7 +811,7 @@ def install_modules(self):
     if os_platform != "Linux":
         subprocess.call([pybin, "-m", "pip", "install", "--disable-pip-version-check", "--use-deprecated=legacy-resolver", "git+https://github.com/suno-ai/bark.git", "--no-warn-script-location", "--upgrade"])
         import_module(self, "whisperspeech", "WhisperSpeech==0.8")
-        import_module(self, "jaxlib", "jaxlib>=0.4.33")
+        #import_module(self, "jaxlib", "jaxlib>=0.4.33")
 
     subprocess.check_call([pybin, "-m", "pip", "install", "--disable-pip-version-check", "--use-deprecated=legacy-resolver", "peft", "--no-warn-script-location", "--upgrade"])
     import_module(self, "transformers", "transformers==4.46.3")
@@ -1150,7 +1151,8 @@ class GeneratorAddonPreferences(AddonPreferences):
             ("wangfuyun/AnimateLCM", "AnimateLCM", "wangfuyun/AnimateLCM"),
             ("THUDM/CogVideoX-2b", "CogVideoX-2b (720x480x48)", "THUDM/CogVideoX-2b"),
             ("THUDM/CogVideoX-5b", "CogVideoX-5b (720x480x48)", "THUDM/CogVideoX-5b"),
-            ("genmo/mochi-1-preview", "Mochi-1", "genmo/mochi-1-preview"),
+            ("Lightricks/LTX-Video", "LTX (768x512)", "Lightricks/LTX-Video"),
+#            ("genmo/mochi-1-preview", "Mochi-1", "genmo/mochi-1-preview"), #noot good enough yet!
             (
                 "cerspense/zeroscope_v2_XL",
                 "Zeroscope XL (1024x576x24)",
@@ -2093,6 +2095,7 @@ class SEQUENCER_OT_generate_movie(Operator):
             and movie_model_card != "wangfuyun/AnimateLCM"
             and movie_model_card != "THUDM/CogVideoX-5b"
             and movie_model_card != "THUDM/CogVideoX-2b"
+            and movie_model_card != "Lightricks/LTX-Video"
             and movie_model_card != "genmo/mochi-1-preview"
         ) or movie_model_card == "stabilityai/stable-diffusion-xl-base-1.0":
             # Frame by Frame
@@ -2269,6 +2272,34 @@ class SEQUENCER_OT_generate_movie(Operator):
                 scene.generate_movie_x = 720
                 scene.generate_movie_y = 480
                 
+            # LTX
+            elif movie_model_card == "Lightricks/LTX-Video":
+                #vid2vid
+                if scene.movie_path and input == "input_strips":
+                    print("LTX Video doesn't support vid2vid!")                
+                    return {"CANCELLED"}
+                #img2vid
+                elif scene.image_path and input == "input_strips":
+                    print("LTX Video: Load Image to Video Model")
+                    import torch
+                    from diffusers.utils import load_image
+                    from diffusers import LTXImageToVideoPipeline, LTXVideoTransformer3DModel, GGUFQuantizationConfig
+                    pipe = LTXImageToVideoPipeline.from_pretrained(
+                        "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
+                        torch_dtype=torch.bfloat16,
+                    )
+                    pipe.enable_model_cpu_offload()  
+
+                else:
+                    print("LTX Video: Load Prompt to Video Model")
+                    import torch
+                    from diffusers import LTXPipeline, LTXVideoTransformer3DModel, GGUFQuantizationConfig
+                    pipe = LTXPipeline.from_pretrained(
+                        "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
+                        torch_dtype=torch.bfloat16,
+                    )
+                    pipe.enable_model_cpu_offload()                
+               
             # Mochi
             elif movie_model_card == "genmo/mochi-1-preview":
                 from diffusers import MochiPipeline
@@ -2504,7 +2535,29 @@ class SEQUENCER_OT_generate_movie(Operator):
 #                    if not video.any():
 #                        print("Loading of file failed")
 #                        return {"CANCELLED"}
-
+                # LTX 
+                elif movie_model_card == "Lightricks/LTX-Video":
+                    if scene.image_path:
+                        print("Process: Image to video (LTX)")
+                        if not os.path.isfile(scene.image_path):
+                            print("No file found.")
+                            return {"CANCELLED"}
+                        image = load_image(bpy.path.abspath(scene.image_path))
+                        image = image.resize((closest_divisible_16(int(x)), closest_divisible_16(int(y))))
+                        video_frames = pipe(
+                            image=image,
+                            prompt=prompt,
+                            #strength=1.00 - scene.image_power,
+                            negative_prompt=negative_prompt,
+                            num_inference_steps=movie_num_inference_steps,
+                            guidance_scale=movie_num_guidance,
+                            height=y,
+                            width=x,
+                            num_frames=abs(duration),
+                            generator=generator,
+                            #use_dynamic_cfg=True,
+                        ).frames[0]                  
+                
                 else:
                     if scene.movie_path:
                         print("Process: Video to video")
@@ -2629,7 +2682,7 @@ class SEQUENCER_OT_generate_movie(Operator):
                                 filepath=dst_path,
                                 frame_start=start_frame,
                                 channel=empty_channel,
-                                fit_method="STRETCH",
+                                fit_method="FIT",
                                 adjust_playback_rate=True,
                                 sound=False,
                                 use_framerate=False,
@@ -5822,7 +5875,7 @@ def register():
         name="generate_movie_frames",
         default=6,
         min=-1,
-        max=125,
+        max=500,
         description="Number of frames to generate. NB. some models have fixed values.",
     )
 
